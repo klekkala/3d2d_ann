@@ -12,7 +12,9 @@ python match.py 1326035199606919
 It means it will read the 1326035199606919.bin in ./velodyne_sync, and automatically find the closest images of 5 cams.
 
 # project_vel_to_cam.py
-ß
+It can project 3D point cloud to 2d.
+
+
 To run the project, simply use
 
 ```shell
