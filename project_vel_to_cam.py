@@ -18,8 +18,60 @@ import struct
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
-
+import random
+import torch
+import pickle
+import colorsys
+from collections import Counter
 #from undistort import *
+
+
+def write_ply_point_cloud(filename, points, colors=None):
+    header = '''ply
+format ascii 1.0
+element vertex {}
+property float x
+property float y
+property float z
+'''.format(len(points))
+
+    if colors is not None:
+        header += '''property uchar red
+property uchar green
+property uchar blue
+'''
+    header += '''end_header
+'''
+
+    with open(filename, 'w') as f:
+        f.write(header)
+        if colors is not None:
+            for point, color in zip(points, colors):
+                f.write('{} {} {} {} {} {}\n'.format(point[0], point[1], point[2], color[0], color[1], color[2]))
+        else:
+            for point in points:
+                f.write('{} {} {}\n'.format(point[0], point[1], point[2]))
+
+def generate_unique_colors(num_colors):
+    colors = set()
+    while len(colors) < num_colors:
+        # Generate random hue, saturation, and lightness
+        hue = random.random()
+        saturation = random.uniform(0.5, 1.0)  # Adjust saturation to avoid dull colors
+        lightness = random.uniform(0.4, 0.6)  # Adjust lightness to avoid overly dark or bright colors
+        # Convert HSL to RGB
+        r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
+        # Scale RGB values to 0-255
+        r, g, b = int(r * 255), int(g * 255), int(b * 255)
+        colors.add((r, g, b))
+    return list(colors)
+
+
+def most_frequent(lst):
+    counts = Counter(lst)
+    max_count = max(counts.values())
+    most_common = [key for key, value in counts.items() if value == max_count]
+    return random.choice(most_common)
 
 def convert(x_s, y_s, z_s):
 
@@ -56,7 +108,6 @@ def load_vel_hits(filename):
 
     f_bin.close()
     hits = np.asarray(hits)
-
     return hits.transpose()
 
 def ssc_to_homo(ssc):
@@ -96,8 +147,8 @@ def ssc_to_homo(ssc):
 def project_vel_to_cam(hits, cam_num):
 
     # Load camera parameters
-    K = np.loadtxt('K_cam%d.csv' % (cam_num), delimiter=',')
-    x_lb3_c = np.loadtxt('x_lb3_c%d.csv' % (cam_num), delimiter=',')
+    K = np.loadtxt('./data/lt_dataset/K_cam%d.csv' % (cam_num), delimiter=',')
+    x_lb3_c = np.loadtxt('./data/lt_dataset/x_lb3_c%d.csv' % (cam_num), delimiter=',')
 
     # Other coordinate transforms we need
     x_body_lb3 = [0.035, 0.002, -1.23, -179.93, -0.23, 0.50]
@@ -113,32 +164,20 @@ def project_vel_to_cam(hits, cam_num):
 
     hits_c = np.matmul(T_c_body, hits)
     hits_im = np.matmul(K, hits_c[0:3, :])
-
     return hits_im
 
-def main(args):
-
-    if len(args)<4:
-        print("""Incorrect usage.
-
-To use:
-
-   python project_vel_to_cam.py vel img cam_num
-
-      vel:  The velodyne binary file (timestamp.bin)
-      img:  The undistorted image (timestamp.tiff)
-  cam_num:  The index (0 through 5) of the camera
-""")
-        return 1
+def proj(hits_body, img, cam_num, proj_dict):
 
 
     # Load velodyne points
-    hits_body = load_vel_hits(args[1])
+    
 
     # Load image
-    image = mpimg.imread(args[2])
+    image = mpimg.imread(img)
 
-    cam_num = int(args[3])
+    masks = torch.load('/'.join(img.split('/')[:-1]) + '/masks.pt')
+
+    cam_num = int(cam_num)
 
     hits_image = project_vel_to_cam(hits_body, cam_num)
 
@@ -146,20 +185,75 @@ To use:
     y_im = hits_image[1, :]/hits_image[2, :]
     z_im = hits_image[2, :]
 
-    idx_infront = z_im>0
-    x_im = x_im[idx_infront]
-    y_im = y_im[idx_infront]
-    z_im = z_im[idx_infront]
+    # idx_infront = z_im>0
+    # x_im = x_im[idx_infront]
+    # y_im = y_im[idx_infront]
+    # z_im = z_im[idx_infront]
 
-    plt.figure(1)
-    plt.imshow(image)
-    plt.scatter(x_im, y_im, c=z_im, s=5, linewidths=0)
-    plt.xlim(0, 1616)
-    plt.ylim(0, 1232)
-    plt.savefig('res.png')
+    indices = np.where((x_im > 0) & (x_im < 1616) & (y_im > 0) & (y_im < 1232) & (z_im>0))[0]
+    for point in indices:
+        pixel = (round(x_im[point]), round(y_im[point]))
+        if pixel[1]>=1232:
+            pixel=(pixel[0],1231)
+        if pixel[0]>=1616:
+            pixel=(1615, pixel[1])
+        pixel_lebel=-1
+        for mask in range(masks.shape[0]):
+            # print(masks[mask, 0])
+            # condition = masks[mask, 0] == True
+            # true_indices = torch.nonzero(condition)
+            # print(true_indices.shape)
+            # print(mask)
+            # condition = masks[1, 0] == True
+            # true_indices = torch.nonzero(condition)
+            # print(true_indices.shape)
+            # print(masks[mask, 0, pixel[1], pixel[0]])
+            if masks[mask, 0, pixel[1], pixel[0]]:
+                pixel_lebel = mask
+                break
+        if pixel_lebel != -1:
+
+            if pixel not in proj_dict.keys():
+                proj_dict[point] = [(cam_num, pixel_lebel)]
+            else:
+                proj_dict[point].append((cam_num, pixel_lebel))
+    # print(len(indices))
+    # plt.figure(1)
+    # plt.imshow(image)
+    # plt.scatter(x_im, y_im, c=z_im, s=5, linewidths=0)
+    # plt.xlim(0, 1616)
+    # plt.ylim(0, 1232)
+    # plt.savefig('res.png')
     # plt.show()
 
-    return 0
+    return proj_dict
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv))
+    hits_body = load_vel_hits(sys.argv[1])
+    colors = np.zeros((hits_body.shape[1], 3))
+    with open('labels_proj', 'rb') as f:
+        label_proj = pickle.load(f)
+    color_label = generate_unique_colors(max(max(sublist) for sublist in label_proj)+1)
+    print(color_label)
+    proj_dict = {}
+    proj_dict = proj(hits_body, './data/lt_dataset/lb3/Cam0/1326036598034801.tiff', 0, proj_dict)
+    proj_dict = proj(hits_body, './data/lt_dataset/lb3/Cam1/1326036598034801.tiff', 1, proj_dict)
+    proj_dict = proj(hits_body, './data/lt_dataset/lb3/Cam2/1326036598034801.tiff', 2, proj_dict)
+    proj_dict = proj(hits_body, './data/lt_dataset/lb3/Cam3/1326036598034801.tiff', 3, proj_dict)
+    proj_dict = proj(hits_body, './data/lt_dataset/lb3/Cam4/1326036598034801.tiff', 4, proj_dict)
+    proj_dict = proj(hits_body, './data/lt_dataset/lb3/Cam5/1326036598034801.tiff', 5, proj_dict)
+
+    for point, obj in proj_dict.items():
+        if len(obj) == 1:
+            obj = obj[0]
+            # print(obj[0], color_label[obj[0]])
+            # print(obj[1], color_label[obj[0][obj[1]]])
+            colors[point] = np.array(color_label[label_proj[obj[0]][obj[1]]])
+        else:
+            tmp_vote = []
+            for c in obj:
+                tmp_vote.append(color_label[label_proj[c[0]][c[1]]])
+            colors[point] = np.array(most_frequent(tmp_vote))
+            
+    points_xyz = hits_body[:3, :].T
+    write_ply_point_cloud('point_cloud_.ply', points_xyz, colors.astype(int))

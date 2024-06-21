@@ -1,0 +1,19 @@
+python grounded_sam_demo.py \
+            --config GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py \
+            --grounded_checkpoint groundingdino_swint_ogc.pth \
+            --sam_checkpoint sam_vit_h_4b8939.pth \
+            --input_image "assets/test/cam1_1687658148903608456.jpg" \
+            --output_dir "outputs/test/p1" \
+            --box_threshold 0.3 \
+            --text_threshold 0.25 \
+            --text_prompt "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass" \
+            --device "cuda"
+
+
+#p1: "building,tree,window,street lamp,bush,door,pavement,person,fire hydrant,leaf,chair,ground,bicycle rack,umbrella"  29 boxes 
+#p1: "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass" 30 boxes
+#p2: "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass, fire hydrant" 31 boxes
+#p3: "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass, fire hydrant, person" 29 boxes
+#p4: "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass, fire hydrant, person, car" 29 boxes
+#p5: "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass, fire hydrant, person, car, Parking lot lines" 29 boxes
+#p6: "Trees, Bushes, Benches, Tables, Chairs, Pavement, Buildings, Windows, Doors, Emergency call box, Umbrellas, Leaves, Grass, fire hydrant, person, car, Parking lot lines, Boat, Scooter, Dog, Bear, Cat" 29 boxes
